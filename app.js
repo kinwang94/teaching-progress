@@ -78,6 +78,17 @@ const dObj = s => { const [y, m, d] = s.split('-').map(Number); return new Date(
 const fmtMD = s => { const d = dObj(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
 const dowOf = s => DOW[dObj(s).getDay()];
 
+const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=gist&description=teaching-progress';
+function tokenHelpHtml() {
+  return `還沒有的話，點這裡建立（已經幫你勾好 <code>gist</code> 權限）：
+    <a href="${TOKEN_URL}" target="_blank" rel="noopener">開新分頁建立 Token</a><br>
+    有效期選 No expiration，最下面按 Generate token，複製出現的那一長串文字（只顯示這一次）。`;
+}
+function planGistHelpHtml() {
+  return `還沒有的話，把課節表（Excel/PDF/課表照片都可以）交給 Claude，
+    請它照這個 repo 裡的 <code>SETUP_PROMPT.md</code> 幫你整理並建立；
+    或自己到 <a href="https://gist.github.com" target="_blank" rel="noopener">gist.github.com</a> 手動建一個 <b>secret</b> gist。`;
+}
 function toast(msg) {
   const t = $('toast');
   t.textContent = msg; t.classList.add('show');
@@ -679,14 +690,8 @@ function vSetup() {
     <p class="hintx" style="margin-top:0">這個 app 本身不含任何課表資料——班別、課節表存在你自己的私有 GitHub Gist 裡。
     第一次用需要設定一次，之後開啟就會自動讀取，不用再管。你需要準備兩樣東西：</p>
     <ol class="steps hintx" style="font-size:13.5px">
-      <li><b>一個 GitHub Token</b>（給這個網頁用的專屬鑰匙，不是你的登入密碼）——
-        還沒有的話，點這裡建立（已經幫你勾好需要的權限）：<br>
-        <a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=teaching-progress" target="_blank" rel="noopener">開新分頁建立 Token</a><br>
-        有效期選 No expiration，最下面按 Generate token，複製出現的那一長串文字（只顯示這一次）</li>
-      <li><b>一個「課程設定」私有 Gist</b>（存你的班別和課表）——
-        還沒有的話，把課節表（Excel/PDF/課表照片都可以）交給 Claude，
-        請它照這個 repo 裡的 <code>SETUP_PROMPT.md</code> 幫你整理並建立；
-        或自己到 <a href="https://gist.github.com" target="_blank" rel="noopener">gist.github.com</a> 手動建一個 <b>secret</b> gist</li>
+      <li><b>一個 GitHub Token</b>（給這個網頁用的專屬鑰匙，不是你的登入密碼）——${tokenHelpHtml()}</li>
+      <li><b>一個「課程設定」私有 Gist</b>（存你的班別和課表）——${planGistHelpHtml()}</li>
     </ol>
     <p class="hintx">兩樣都準備好之後，按下面「開啟設定」把 Token 和 Gist ID 貼進去就完成了。</p>
     <div class="mfoot"><button class="btn" id="btnSetGo">開啟設定</button></div>
@@ -785,20 +790,17 @@ function openSettings() {
 
     <label class="f">GitHub Token（需要 gist 權限）</label>
     <input type="password" id="sTok" value="${esc(tok)}" placeholder="ghp_… 或 github_pat_…" autocomplete="off">
-    <p class="hintx" style="margin-top:6px">還沒有的話，點這裡建立（已經幫你勾好 <code>gist</code> 權限）：
-      <a href="https://github.com/settings/tokens/new?scopes=gist&amp;description=teaching-progress" target="_blank" rel="noopener">開新分頁建立 Token</a><br>
-      有效期選 No expiration，最下面按 Generate token，複製那一長串文字貼上面（只顯示這一次）。</p>
+    <p class="hintx" style="margin-top:6px">${tokenHelpHtml()}</p>
 
     <label class="f">課程設定 Gist ID（班別、課節表）</label>
     <input type="text" id="sPgid" value="${esc(pgid)}" placeholder="貼你的課程設定 Gist ID" autocomplete="off">
-    <p class="hintx" style="margin-top:6px">還沒有的話，把課節表（Excel/PDF/課表照片都可以）交給 Claude，
-      請它照這個 repo 裡的 <code>SETUP_PROMPT.md</code> 幫你整理並建立；
-      或自己到 <a href="https://gist.github.com" target="_blank" rel="noopener">gist.github.com</a> 手動建一個 <b>secret</b> gist，把 Gist 網址最後那串英數字貼這裡。</p>
+    <p class="hintx" style="margin-top:6px">${planGistHelpHtml()}</p>
 
     <label class="f">進度記錄 Gist ID（留空會自動建立一個私有 Gist）</label>
     <input type="text" id="sGid" value="${esc(gid)}" placeholder="留空即自動建立" autocomplete="off">
-    <p class="hintx" style="margin-top:6px">第一次可以留空，存檔後 app 會自動幫你建一個私有 Gist 存實際記錄，這個欄位會自動填上；
-      換別的裝置時把這組 ID 也貼過去，兩邊記錄才會同步。</p>
+    <p class="hintx" style="margin-top:6px">第一次可以留空，存檔後 app 會自動幫你建一個私有 Gist 存實際記錄；
+      存檔後重新打開設定就會看到這個欄位填上了。換別的裝置時把這組 ID 也貼過去，兩邊記錄才會同步，
+      或到 <a href="https://gist.github.com" target="_blank" rel="noopener">gist.github.com</a> 找檔名 <code>progress.json</code> 的那個。</p>
 
     <div class="mfoot">
       <button class="btn ghost" id="mCancel">取消</button>
