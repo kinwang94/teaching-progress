@@ -38,8 +38,9 @@ App 第一次開啟、還沒設定課表時，會顯示「還沒有課程設定�
 
 ## 三、開啟同步（第一次做一次就夠）
 
-1. GitHub → Settings → Developer settings → Personal access tokens → **Tokens (classic)** → Generate new token
-2. 只勾 **`gist`** 一項，有效期揀 No expiration
+1. 開 https://github.com/settings/tokens/new?scopes=gist&description=teaching-progress
+   （已經幫你勾好 `gist` 這個權限）
+2. 有效期揀 No expiration，最下面按 Generate token，複製出現的那一長串文字（只顯示這一次）
 3. 回到工具，右上角「設定」：
    - 貼上 token
    - 「課程設定 Gist ID」貼上第二步建立的那個私有 Gist 的 ID
