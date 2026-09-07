@@ -50,7 +50,7 @@ const TASK_RULES = [
 ];
 
 // ---------- 狀態 ----------
-let DATA = { v: 1, updated: null, rec: {}, task: {}, over: {}, extra: {}, print: {} };
+let DATA = { v: 1, updated: null, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {} };
 let view = localStorage.getItem(LS_VIEW) || 'today';
 if (view === 'week' || view === 'class') view = 'cal';
 let classFilter = localStorage.getItem(LS_CLASS) || 'all';
@@ -102,8 +102,8 @@ function loadLocal() {
     const raw = localStorage.getItem(LS_DATA);
     if (raw) {
       const d = JSON.parse(raw);
-      DATA = Object.assign({ v: 1, updated: null, rec: {}, task: {}, over: {}, extra: {}, print: {} }, d);
-      DATA.rec = DATA.rec || {}; DATA.task = DATA.task || {}; DATA.over = DATA.over || {}; DATA.extra = DATA.extra || {}; DATA.print = DATA.print || {};
+      DATA = Object.assign({ v: 1, updated: null, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {} }, d);
+      DATA.rec = DATA.rec || {}; DATA.task = DATA.task || {}; DATA.over = DATA.over || {}; DATA.extra = DATA.extra || {}; DATA.print = DATA.print || {}; DATA.tomb = DATA.tomb || {};
     }
   } catch (e) { console.warn('本機資料讀取失敗', e); }
 }
@@ -112,6 +112,12 @@ function saveLocal() {
   try { localStorage.setItem(LS_DATA, JSON.stringify(DATA)); } catch (e) { console.warn(e); }
 }
 function touch() { saveLocal(); render(); queueSync(); }
+/* extra／print 的 id 是隨機產生、不會重用，刪除後永久記一筆墓碑，
+   避免同步合併時把還沒同步到刪除的舊版本（remote）救回來 */
+function markDeleted(collection, id) {
+  DATA.tomb = DATA.tomb || {};
+  DATA.tomb[collection + ':' + id] = 1;
+}
 
 // ---------- 課節索引（等 plan.json 載入後才會有內容） ----------
 let PLAN = null, CLASSES = [], byId = {};
@@ -166,7 +172,10 @@ function injectExtra(id, e) {
   byId[id] = l;
 }
 function loadExtras() {
-  Object.keys(DATA.extra || {}).forEach(id => injectExtra(id, DATA.extra[id]));
+  Object.keys(DATA.extra || {}).forEach(id => {
+    if (DATA.tomb && DATA.tomb['extra:' + id]) { delete DATA.extra[id]; return; }
+    injectExtra(id, DATA.extra[id]);
+  });
 }
 function addExtraLesson(cid, date, period, plan) {
   const id = 'extra-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -183,6 +192,7 @@ function removeExtraLesson(id) {
   delete DATA.extra[id];
   delete DATA.rec[id];
   delete DATA.over[id];
+  markDeleted('extra', id);
   touch();
 }
 
@@ -193,7 +203,7 @@ function addPrint(p) {
   touch();
   return id;
 }
-function removePrint(id) { delete DATA.print[id]; touch(); }
+function removePrint(id) { delete DATA.print[id]; markDeleted('print', id); touch(); }
 function addPrintFromForm() {
   const cid = $('prCid').value, date = $('prDate').value || todayISO(), name = $('prName').value.trim();
   const sheets = Math.max(1, Number($('prSheets').value) || 1), copies = Math.max(1, Number($('prCopies').value) || 1);
@@ -896,9 +906,14 @@ function mergeData(a, b) {
   // 較新的 updated 勝出，逐筆合併
   const newer = (!a.updated || (b.updated && b.updated > a.updated)) ? b : a;
   const older = newer === b ? a : b;
-  const out = { v: 1, updated: newer.updated, rec: {}, task: {}, over: {}, extra: {}, print: {} };
-  ['rec', 'task', 'over', 'extra', 'print'].forEach(k => {
+  const out = { v: 1, updated: newer.updated, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {} };
+  ['rec', 'task', 'over', 'extra', 'print', 'tomb'].forEach(k => {
     out[k] = Object.assign({}, older[k] || {}, newer[k] || {});
+  });
+  // extra／print 的 id 不會重用，只要任一邊記過刪除的墓碑，就不讓它從另一邊復活
+  Object.keys(out.tomb).forEach(tk => {
+    const i = tk.indexOf(':'), coll = tk.slice(0, i), id = tk.slice(i + 1);
+    if ((coll === 'extra' || coll === 'print') && out[coll]) delete out[coll][id];
   });
   return out;
 }
