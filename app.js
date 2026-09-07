@@ -61,6 +61,7 @@ let selDay = null;
 let syncState = 'off';
 let inlineOpen = false;
 let prLast = { date: null, cid: null, color: 'bw', sides: 'single' };
+let editingPrintId = null;
 
 // ---------- 工具 ----------
 const $ = id => document.getElementById(id);
@@ -213,6 +214,20 @@ function addPrintFromForm() {
   prLast = { date, cid, color, sides };
   toast('已加入');
   if ($('prName')) $('prName').focus();
+}
+function savePrintEdit(id, row) {
+  const p = DATA.print[id]; if (!p || !row) { editingPrintId = null; render(); return; }
+  const get = f => { const el = row.querySelector('[data-f="' + f + '"]'); return el ? el.value : ''; };
+  const name = get('name').trim();
+  if (!name) { toast('請填「印了什麼」'); return; }
+  DATA.print[id] = {
+    cid: get('cid'), date: get('date') || p.date, name,
+    sheets: Math.max(1, Number(get('sheets')) || 1), copies: Math.max(1, Number(get('copies')) || 1),
+    color: get('color'), sides: get('sides'), note: get('note').trim() || undefined
+  };
+  editingPrintId = null;
+  touch();
+  toast('已更新');
 }
 
 function activeClasses() {
@@ -467,7 +482,7 @@ function vCal() {
     const ev = PLAN.calendar[dt];
     const wk = PLAN.weeks && PLAN.weeks[dt];
     h += `<div class="day${out ? ' out' : ''}${dt === t ? ' today' : ''}${dt === selDay ? ' sel' : ''}">
-      <div class="dnum" data-day="${dt}"><b>${x.getDate()}</b>${dt === t ? '今日' : ''}${wk ? `<span class="wk">第${wk[1]}週</span>` : ''}</div>
+      <div class="dnum" data-day="${dt}"><b>${x.getDate()}</b>${dt === t ? '今日' : ''}${wk ? `<span class="wk">第 ${wk[1]} 週</span>` : ''}</div>
       ${ev ? `<div class="ev" title="${esc(ev.join('、'))}">${esc(ev.join('、'))}</div>` : ''}
       ${ls.map(cellLesson).join('')}
       <button class="addlz" data-addday="${dt}" title="加開課節">＋加課</button>
@@ -585,6 +600,30 @@ function vPrint() {
   list.forEach(p => {
     const c = printClassOf(p.cid);
     const cost = printCost(p);
+    if (p.id === editingPrintId) {
+      h += `<tr class="pr-new">
+        <td><input type="date" data-f="date" value="${esc(p.date)}"></td>
+        <td><select data-f="cid">${PRINT_CLASSES.map(x => `<option value="${x.id}"${x.id === p.cid ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></td>
+        <td><input type="text" data-f="name" value="${esc(p.name || '')}"></td>
+        <td class="n"><input type="number" data-f="sheets" min="1" value="${p.sheets}"></td>
+        <td class="n"><input type="number" data-f="copies" min="1" value="${p.copies}"></td>
+        <td><select data-f="color">
+          <option value="bw"${p.color !== 'color' ? ' selected' : ''}>黑白</option>
+          <option value="color"${p.color === 'color' ? ' selected' : ''}>彩色</option>
+        </select></td>
+        <td><select data-f="sides">
+          <option value="single"${p.sides !== 'double' ? ' selected' : ''}>單面</option>
+          <option value="double"${p.sides === 'double' ? ' selected' : ''}>雙面</option>
+        </select></td>
+        <td><input type="text" data-f="note" value="${esc(p.note || '')}"></td>
+        <td class="n">—</td>
+        <td style="white-space:nowrap">
+          <button class="btn" data-predsave="${p.id}" style="padding:5px 10px">存</button>
+          <button class="edit" data-predcancel="${p.id}">取消</button>
+        </td>
+      </tr>`;
+      return;
+    }
     h += `<tr>
       <td>${fmtMD(p.date)}</td>
       <td><span class="cdot" style="display:inline-block;background:${c.color}"></span>${esc(c.name)}</td>
@@ -595,7 +634,10 @@ function vPrint() {
       <td>${p.sides === 'double' ? '雙面' : '單面'}</td>
       <td>${esc(p.note || '')}</td>
       <td class="n">$${cost.toFixed(2)}</td>
-      <td><button class="edit" data-prdel="${p.id}">刪除</button></td>
+      <td style="white-space:nowrap">
+        <button class="edit" data-predit="${p.id}">編輯</button>
+        <button class="edit" data-prdel="${p.id}">刪除</button>
+      </td>
     </tr>`;
   });
   h += `</tbody></table></div>`;
@@ -990,6 +1032,12 @@ $('view').addEventListener('click', e => {
   if (ad) { openAddLesson(ad.dataset.addday); return; }
   const pd = e.target.closest('[data-prdel]');
   if (pd) { removePrint(pd.dataset.prdel); toast('已刪除'); return; }
+  const ped = e.target.closest('[data-predit]');
+  if (ped) { editingPrintId = ped.dataset.predit; render(); return; }
+  const pec = e.target.closest('[data-predcancel]');
+  if (pec) { editingPrintId = null; render(); return; }
+  const pes = e.target.closest('[data-predsave]');
+  if (pes) { savePrintEdit(pes.dataset.predsave, pes.closest('tr')); return; }
   if (e.target.id === 'prAdd') { addPrintFromForm(); return; }
   if (e.target.id === 'expPrint') { exportPrintCsv(); return; }
   if (e.target.id === 'btnSetGo') { openSettings(); return; }
