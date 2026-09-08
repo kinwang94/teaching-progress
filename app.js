@@ -35,7 +35,7 @@ function printClassOf(cid) {
   return PRINT_CLASSES.find(x => x.id === cid) || { id: cid, name: cid, color: '#5C6B73' };
 }
 function printCost(p) {
-  const unit = (PRINT_RATE[p.color] || 0) * (p.sides === 'double' ? 2 : 1);
+  const unit = PRINT_RATE[p.color] || 0;
   return unit * (Number(p.sheets) || 0) * (Number(p.copies) || 0);
 }
 
@@ -60,7 +60,7 @@ let calMode = localStorage.getItem('tp.calmode') || 'month';
 let selDay = null;
 let syncState = 'off';
 let inlineOpen = false;
-let prLast = { date: null, cid: null, color: 'bw', sides: 'single' };
+let prLast = { date: null, cid: null, color: 'bw' };
 let editingPrintId = null;
 
 // ---------- 工具 ----------
@@ -208,10 +208,10 @@ function removePrint(id) { delete DATA.print[id]; markDeleted('print', id); touc
 function addPrintFromForm() {
   const cid = $('prCid').value, date = $('prDate').value || todayISO(), name = $('prName').value.trim();
   const sheets = Math.max(1, Number($('prSheets').value) || 1), copies = Math.max(1, Number($('prCopies').value) || 1);
-  const color = $('prColor').value, sides = $('prSides').value, note = $('prNote').value.trim();
+  const color = $('prColor').value, note = $('prNote').value.trim();
   if (!name) { toast('請填「印了什麼」'); $('prName').focus(); return; }
-  addPrint({ cid, date, name, sheets, copies, color, sides, note: note || undefined });
-  prLast = { date, cid, color, sides };
+  addPrint({ cid, date, name, sheets, copies, color, note: note || undefined });
+  prLast = { date, cid, color };
   toast('已加入');
   if ($('prName')) $('prName').focus();
 }
@@ -223,7 +223,7 @@ function savePrintEdit(id, row) {
   DATA.print[id] = {
     cid: get('cid'), date: get('date') || p.date, name,
     sheets: Math.max(1, Number(get('sheets')) || 1), copies: Math.max(1, Number(get('copies')) || 1),
-    color: get('color'), sides: get('sides'), note: get('note').trim() || undefined
+    color: get('color'), note: get('note').trim() || undefined
   };
   editingPrintId = null;
   touch();
@@ -577,21 +577,17 @@ function vPrint() {
   const prCid0 = prLast.cid || PRINT_CLASSES[0].id;
   let h = `<p class="hintx" style="margin-top:0">像 Excel 一樣一列一列填，Tab 從左到右換欄，Enter 直接加入這筆——新的一筆會出現在下面第一列。</p>
   <div class="calwrap" style="margin-bottom:14px"><table class="pr-tbl"><thead><tr>
-    <th>日期</th><th>班別</th><th>印了什麼</th><th class="n">張數</th><th class="n">份數</th><th>顏色</th><th>單／雙面</th><th>備註</th><th class="n">金額</th><th></th>
+    <th>日期</th><th>班別</th><th>印了什麼</th><th class="n">版數</th><th class="n">份數</th><th>顏色</th><th>備註</th><th class="n">金額</th><th></th>
   </tr></thead><tbody>
     <tr class="pr-new">
       <td><input type="date" id="prDate" value="${prDate}"></td>
       <td><select id="prCid">${PRINT_CLASSES.map(c => `<option value="${c.id}"${c.id === prCid0 ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select></td>
       <td><input type="text" id="prName" placeholder="例如：3.2 工作紙"></td>
-      <td class="n"><input type="number" id="prSheets" min="1" value="1"></td>
+      <td class="n"><input type="number" id="prSheets" min="1" value="1" title="印了幾版"></td>
       <td class="n"><input type="number" id="prCopies" min="1" value="${CLASS_SIZE[prCid0] || 1}"></td>
       <td><select id="prColor">
         <option value="bw"${prLast.color === 'bw' ? ' selected' : ''}>黑白</option>
         <option value="color"${prLast.color === 'color' ? ' selected' : ''}>彩色</option>
-      </select></td>
-      <td><select id="prSides">
-        <option value="single"${prLast.sides === 'single' ? ' selected' : ''}>單面</option>
-        <option value="double"${prLast.sides === 'double' ? ' selected' : ''}>雙面</option>
       </select></td>
       <td><input type="text" id="prNote" placeholder="可留空"></td>
       <td class="n">—</td><td></td>
@@ -605,15 +601,11 @@ function vPrint() {
         <td><input type="date" data-f="date" value="${esc(p.date)}"></td>
         <td><select data-f="cid">${PRINT_CLASSES.map(x => `<option value="${x.id}"${x.id === p.cid ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></td>
         <td><input type="text" data-f="name" value="${esc(p.name || '')}"></td>
-        <td class="n"><input type="number" data-f="sheets" min="1" value="${p.sheets}"></td>
+        <td class="n"><input type="number" data-f="sheets" min="1" value="${p.sheets}" title="印了幾版"></td>
         <td class="n"><input type="number" data-f="copies" min="1" value="${p.copies}"></td>
         <td><select data-f="color">
           <option value="bw"${p.color !== 'color' ? ' selected' : ''}>黑白</option>
           <option value="color"${p.color === 'color' ? ' selected' : ''}>彩色</option>
-        </select></td>
-        <td><select data-f="sides">
-          <option value="single"${p.sides !== 'double' ? ' selected' : ''}>單面</option>
-          <option value="double"${p.sides === 'double' ? ' selected' : ''}>雙面</option>
         </select></td>
         <td><input type="text" data-f="note" value="${esc(p.note || '')}"></td>
         <td class="n">—</td>
@@ -631,7 +623,6 @@ function vPrint() {
       <td class="n">${p.sheets}</td>
       <td class="n">${p.copies}</td>
       <td>${p.color === 'color' ? '彩色' : '黑白'}</td>
-      <td>${p.sides === 'double' ? '雙面' : '單面'}</td>
       <td>${esc(p.note || '')}</td>
       <td class="n">$${cost.toFixed(2)}</td>
       <td style="white-space:nowrap">
@@ -979,11 +970,11 @@ function exportCsv() {
   download(`教學進度_${todayISO()}.csv`, csv, 'text/csv;charset=utf-8');
 }
 function exportPrintCsv() {
-  const rows = [['日期', '班別', '內容', '張數', '份數', '顏色', '單雙面', '金額', '備註']];
+  const rows = [['日期', '班別', '內容', '版數', '份數', '顏色', '金額', '備註']];
   Object.keys(DATA.print).map(id => DATA.print[id]).sort((a, b) => a.date < b.date ? -1 : 1).forEach(p => {
     const c = printClassOf(p.cid);
     rows.push([p.date, c.name, p.name || '', p.sheets, p.copies,
-      p.color === 'color' ? '彩色' : '黑白', p.sides === 'double' ? '雙面' : '單面',
+      p.color === 'color' ? '彩色' : '黑白',
       printCost(p).toFixed(2), p.note || '']);
   });
   const csv = '﻿' + rows.map(r => r.map(x => `"${String(x).replace(/"/g, '""')}"`).join(',')).join('\r\n');
