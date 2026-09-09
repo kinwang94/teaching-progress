@@ -62,6 +62,7 @@ let syncState = 'off';
 let inlineOpen = false;
 let prLast = { date: null, cid: null, color: 'bw' };
 let editingPrintId = null;
+let printClassFilter = localStorage.getItem('tp.pclass') || 'all';
 
 // ---------- 工具 ----------
 const $ = id => document.getElementById(id);
@@ -570,12 +571,19 @@ function vTodo() {
 }
 
 function vPrint() {
-  const list = Object.keys(DATA.print).map(id => Object.assign({ id }, DATA.print[id]));
-  list.sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+  const all = Object.keys(DATA.print).map(id => Object.assign({ id }, DATA.print[id]));
+  all.sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+  const list = printClassFilter === 'all' ? all : all.filter(p => printClassOf(p.cid).id === printClassFilter);
 
   const prDate = prLast.date || todayISO();
-  const prCid0 = prLast.cid || PRINT_CLASSES[0].id;
-  let h = `<p class="hintx" style="margin-top:0">像 Excel 一樣一列一列填，Tab 從左到右換欄，Enter 直接加入這筆——新的一筆會出現在下面第一列。</p>
+  const prCid0 = (printClassFilter !== 'all' ? printClassFilter : prLast.cid) || PRINT_CLASSES[0].id;
+  let h = `<div class="bar2">
+    <select id="prFilter">
+      <option value="all"${printClassFilter === 'all' ? ' selected' : ''}>全部班別</option>
+      ${PRINT_CLASSES.map(c => `<option value="${c.id}"${printClassFilter === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}
+    </select>
+  </div>
+  <p class="hintx" style="margin-top:0">像 Excel 一樣一列一列填，Tab 從左到右換欄，Enter 直接加入這筆——新的一筆會出現在下面第一列。</p>
   <div class="calwrap" style="margin-bottom:14px"><table class="pr-tbl"><thead><tr>
     <th>日期</th><th>班別</th><th>印了什麼</th><th class="n">版數</th><th class="n">份數</th><th>顏色</th><th>備註</th><th class="n">金額</th><th></th>
   </tr></thead><tbody>
@@ -635,7 +643,7 @@ function vPrint() {
 
   const totals = {};
   let grandTotal = 0;
-  list.forEach(p => {
+  all.forEach(p => {
     const cost = printCost(p);
     const cid = printClassOf(p.cid).id;
     totals[cid] = (totals[cid] || 0) + cost;
@@ -1053,6 +1061,7 @@ $('view').addEventListener('click', e => {
 });
 $('view').addEventListener('change', e => {
   if (e.target.id === 'selClass') { classFilter = e.target.value; localStorage.setItem(LS_CLASS, classFilter); render(); return; }
+  if (e.target.id === 'prFilter') { printClassFilter = e.target.value; localStorage.setItem('tp.pclass', printClassFilter); render(); return; }
   if (e.target.id === 'prCid') {
     const sz = CLASS_SIZE[e.target.value];
     if (sz) $('prCopies').value = sz;
