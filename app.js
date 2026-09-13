@@ -18,13 +18,18 @@ const GIST_FILE = 'progress.json';
 const PLAN_FILE = 'plan.json';
 const API = 'https://api.github.com';
 
+/* 狀態 = 這一節課「教到哪裡」。w 是計入完成度的節數。
+   課堂本身沒發生（放假、活動、排錯）不是狀態，是「取消課節」，見 DATA.off。
+   停課／調課是舊版寫法，skip 表示不列入應上與完成度，留著只為讀得懂舊資料。 */
 const STATES = {
-  done:   { label: '已上', cls: 'done',   sym: '\u2713', w: 1 },
-  part:   { label: '部分', cls: 'part',   sym: '\u2013', w: 0.5 },
-  cancel: { label: '停課', cls: 'cancel', sym: '\u2715', w: 0 },
-  moved:  { label: '調課', cls: 'cancel', sym: '\u2192', w: 0 }   // 舊資料相容
+  done:   { label: '已上完', cls: 'done',  sym: '\u2713', w: 1 },
+  part:   { label: '部分',   cls: 'part',  sym: '\u2013', w: 0.5 },
+  delay:  { label: '未完成', cls: 'delay', sym: '\u21B7', w: 0 },
+  cancel: { label: '停課',   cls: 'off',   sym: '\u2715', w: 0, skip: true },  // 舊資料相容
+  moved:  { label: '調課',   cls: 'off',   sym: '\u2192', w: 0, skip: true }   // 舊資料相容
 };
-const CYCLE = ['', 'done', 'part', 'cancel'];
+const PICK = ['done', 'part', 'delay'];
+const CYCLE = ['', 'done', 'part', 'delay'];
 const DOW = ['日', '一', '二', '三', '四', '五', '六'];
 
 /* 沒有在 plan.json 指定顏色時的預設色盤（CVD 友善） */
@@ -50,7 +55,7 @@ const TASK_RULES = [
 ];
 
 // ---------- 狀態 ----------
-let DATA = { v: 1, updated: null, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {} };
+let DATA = { v: 1, updated: null, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {}, off: {} };
 let view = localStorage.getItem(LS_VIEW) || 'today';
 if (view === 'week' || view === 'class') view = 'cal';
 let classFilter = localStorage.getItem(LS_CLASS) || 'all';
@@ -104,8 +109,8 @@ function loadLocal() {
     const raw = localStorage.getItem(LS_DATA);
     if (raw) {
       const d = JSON.parse(raw);
-      DATA = Object.assign({ v: 1, updated: null, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {} }, d);
-      DATA.rec = DATA.rec || {}; DATA.task = DATA.task || {}; DATA.over = DATA.over || {}; DATA.extra = DATA.extra || {}; DATA.print = DATA.print || {}; DATA.tomb = DATA.tomb || {};
+      DATA = Object.assign({ v: 1, updated: null, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {}, off: {} }, d);
+      DATA.rec = DATA.rec || {}; DATA.task = DATA.task || {}; DATA.over = DATA.over || {}; DATA.extra = DATA.extra || {}; DATA.print = DATA.print || {}; DATA.tomb = DATA.tomb || {}; DATA.off = DATA.off || {};
     }
   } catch (e) { console.warn('本機資料讀取失敗', e); }
 }
@@ -119,6 +124,15 @@ function touch() { saveLocal(); render(); queueSync(); }
 function markDeleted(collection, id) {
   DATA.tomb = DATA.tomb || {};
   DATA.tomb[collection + ':' + id] = 1;
+}
+/* 取消課節：這一格根本不算課（放假、學校活動、課表排錯、加開加錯）。
+   原定課節表是唯讀的，所以取消記在這裡，不會動到 plan.json。
+   復原時寫 0 而不是整筆刪掉，同步合併才不會被舊版本的 1 蓋回來。 */
+function isOff(l) { return !!(DATA.off && DATA.off[l.id || l]); }
+function setOff(id, on) {
+  DATA.off = DATA.off || {};
+  DATA.off[id] = on ? 1 : 0;
+  touch();
 }
 
 // ---------- 課節索引（等 plan.json 載入後才會有內容） ----------
@@ -194,6 +208,7 @@ function removeExtraLesson(id) {
   delete DATA.extra[id];
   delete DATA.rec[id];
   delete DATA.over[id];
+  if (DATA.off) delete DATA.off[id];
   markDeleted('extra', id);
   touch();
 }
@@ -275,8 +290,9 @@ function statsOf(list) {
   list.forEach(c => c.lessons.forEach(l => all.push(l)));
   all.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
   all.forEach(l => {
+    if (isOff(l)) return;
     const r = recOf(l); const st = r && r.s;
-    if (st === 'cancel' || st === 'moved') return;
+    if (st && STATES[st] && STATES[st].skip) return;
     total++;
     if (l.date <= t) due++;
     if (st && STATES[st]) done += STATES[st].w;
@@ -292,6 +308,7 @@ function recOf(l) { return DATA.rec[l.id] || null; }
 
 function tasksOfLesson(l) {
   const out = [];
+  if (isOff(l)) return out;
   const lines = planOf(l).split('\n').map(s => s.trim()).filter(Boolean);
   lines.forEach(line => {
     for (const r of TASK_RULES) {
@@ -337,6 +354,7 @@ function tagsFor(l) {
   else if (l.src === '測驗安排') out.push('<span class="tag test">測驗日</span>');
   else if (l.src === '待定') out.push('<span class="tag est">待定</span>');
   else if (l.src === '加開') out.push('<span class="tag">加開</span>');
+  if (isOff(l)) out.push('<span class="tag off">已取消</span>');
   if (DATA.over[l.id]) out.push('<span class="tag">原定已改</span>');
   tasksOfLesson(l).forEach(t => {
     const cls = t.type === 'test' || t.type === 'quiz' ? 'test' : 'hw';
@@ -349,12 +367,13 @@ function lessonRow(l, opts) {
   opts = opts || {};
   const c = CLASSES.find(x => x.id === l.cid);
   const r = recOf(l);
+  const off = isOff(l);
   const st = r && r.s && STATES[r.s] ? STATES[r.s] : null;
   const isToday = l.date === todayISO();
   const meta = (opts.showDate === false && l.period)
     ? `<b>${esc(l.period)}</b>${esc(l.time || '')}`
     : `<b>${fmtMD(l.date)}</b>${dowOf(l.date)}${l.period ? '<br>' + esc(l.period) : ''}`;
-  return `<div class="lesson${isToday ? ' today' : ''}" data-lid="${l.id}">
+  return `<div class="lesson${isToday ? ' today' : ''}${off ? ' off' : ''}" data-lid="${l.id}">
     <span class="lmark" style="background:${colorOf(c)}"></span>
     <div class="lmeta">${meta}</div>
     <div class="lbody">
@@ -365,7 +384,8 @@ function lessonRow(l, opts) {
       ${tagsFor(l)}
     </div>
     <div class="lact">
-      <button class="st${st ? ' ' + st.cls : ''}" data-quick="${l.id}">${st ? st.label : '記錄'}</button>
+      ${off ? '<button class="st off" data-edit="' + l.id + '">已取消</button>'
+            : `<button class="st${st ? ' ' + st.cls : ''}" data-quick="${l.id}">${st ? st.label : '記錄'}</button>`}
       <button class="edit" data-edit="${l.id}">編輯</button>
     </div>
   </div>`;
@@ -387,7 +407,7 @@ function vToday() {
 
   const pend = [];
   CLASSES.forEach(c => c.lessons.forEach(l => {
-    if (l.date < t && !recOf(l)) pend.push(l);
+    if (l.date < t && !recOf(l) && !isOff(l)) pend.push(l);
   }));
   pend.sort((a, b) => a.date < b.date ? 1 : -1);
 
@@ -435,22 +455,23 @@ function lessonsOn(dt) {
 function stateBtns(l) {
   const r = recOf(l); const st = r && r.s;
   return `<span class="stg">
-    ${['done', 'part', 'cancel'].map(k => `<button class="sb sb-${k}${st === k ? ' on' : ''}" data-setid="${l.id}" data-sets="${k}" title="${STATES[k].label}">${STATES[k].sym}</button>`).join('')}
+    ${PICK.map(k => `<button class="sb sb-${k}${st === k ? ' on' : ''}" data-setid="${l.id}" data-sets="${k}" title="${STATES[k].label}">${STATES[k].sym}</button>`).join('')}
   </span>`;
 }
 
 function cellLesson(l) {
   const c = CLASSES.find(x => x.id === l.cid);
   const r = recOf(l) || {};
+  const off = isOff(l);
   const st = r.s && STATES[r.s] ? r.s : '';
-  const miss = !st && l.date < todayISO();
+  const miss = !off && !st && l.date < todayISO();
   const short = c.name;
   const act = r.a || '';
-  return `<div class="lz st-${st}${miss ? ' lz-miss' : ''}" style="--c:${colorOf(c)}">
+  return `<div class="lz st-${st}${miss ? ' lz-miss' : ''}${off ? ' lz-off' : ''}" style="--c:${colorOf(c)}">
     <div class="lz-h">
       <span class="nm">${esc(short)}</span>
       ${l.period ? `<span class="pd">${esc(l.period)}</span>` : ''}
-      ${stateBtns(l)}
+      ${off ? '<span class="stg offtag">已取消</span>' : stateBtns(l)}
     </div>
     <div class="lz-p" data-inl="p" data-lid="${l.id}" title="雙擊修改原定內容">${esc(planOf(l)) || '（未定）'}</div>
     <div class="lz-a${act ? '' : ' ph'}" data-inl="a" data-lid="${l.id}" title="雙擊輸入實際進度">${act ? esc(act) : '＋'}</div>
@@ -492,12 +513,14 @@ function vCal() {
   h += `</div></div>`;
 
   h += `<div class="legend">
-    <span><em>✓</em>已上</span><span><em>–</em>部分</span><span><em style="color:var(--bad)">✕</em>停課</span>
+    <span><em>✓</em>已上完</span><span><em>–</em>部分</span><span><em style="color:var(--bad)">↷</em>未完成（順延）</span>
     <span><i style="background:#FBEBD3"></i>過期未記錄</span>
+    <span><i style="background:#EDEFEF;border:1px solid var(--rule)"></i>已取消課節</span>
     <span class="sep"></span>
     ${CLASSES.map(c => `<span><i style="background:${colorOf(c)}"></i>${esc(c.name)}</span>`).join('')}
   </div>
-  <p class="hintx">雙擊上半格改原定內容，雙擊下半格記實際進度（Enter 儲存、Esc 取消）。右上角 ✓／–／✕ 按一下直接設定，再按一下清除。按日期數字展開該日全部課節。</p>`;
+  <p class="hintx">雙擊上半格改原定內容，雙擊下半格記實際進度（Enter 儲存、Esc 取消）。右上角 ✓／–／↷ 按一下直接設定，再按一下清除。
+  按日期數字展開該日全部課節，在那裡按「編輯」可以取消整節課（放假、活動、排錯），取消的課節不算進度。</p>`;
 
   const day = selDay;
   if (day) {
@@ -754,12 +777,14 @@ function openLesson(id) {
   const l = byId[id]; if (!l) return;
   const c = CLASSES.find(x => x.id === l.cid);
   const r = recOf(l) || {};
+  const off = isOff(l);
   $('modal').innerHTML = `
     <h3>${esc(c.name)}　${fmtMD(l.date)}（${dowOf(l.date)}）${l.period ? '　' + esc(l.period) : ''}</h3>
     <div class="ref">原定：${esc(l.plan) || '（未定）'}${l.src ? `\n來源：${esc(l.src)}` : ''}</div>
+    ${off ? '<p class="hintx" style="color:var(--bad);margin:0">這一節已取消，不計入應上節數與完成度。</p>' : ''}
     <label class="f">狀態</label>
     <div class="states" id="stRow">
-      ${['done', 'part', 'cancel'].map(k => `<button data-s="${k}" aria-pressed="${r.s === k}">${STATES[k].sym}　${STATES[k].label}</button>`).join('')}
+      ${PICK.map(k => `<button data-s="${k}" aria-pressed="${r.s === k}">${STATES[k].sym}　${STATES[k].label}</button>`).join('')}
       <button data-s="" aria-pressed="${!r.s}">清除</button>
     </div>
     <label class="f">實際教到哪裡</label>
@@ -772,7 +797,12 @@ function openLesson(id) {
       <button class="btn ghost" id="mCancel">取消</button>
       <button class="btn" id="mSave">儲存</button>
     </div>
-    ${l.src === '加開' ? `<div class="mfoot"><button class="btn danger" id="mDel">刪除本節（加開的課節）</button></div>` : ''}`;
+    <div class="mfoot">
+      <button class="btn danger" id="mOff">${off ? '復原本節課' : '取消本節課'}</button>
+      ${l.src === '加開' ? `<button class="btn danger" id="mDel">刪除本節</button>` : ''}
+    </div>
+    <p class="hintx" style="margin-top:6px">「取消本節課」用在放假、學校活動、課表排錯——這一格不算課，隨時可以復原。
+    ${l.src === '加開' ? '「刪除本節」把加錯的課節整筆移除，不能復原。' : '原定課節表裡的課只能取消，不會從課表刪掉。'}</p>`;
   let pick = r.s || '';
   $('stRow').onclick = e => {
     const b = e.target.closest('button[data-s]'); if (!b) return;
@@ -787,6 +817,7 @@ function openLesson(id) {
     if (o) DATA.over[l.id] = o; else delete DATA.over[l.id];
     closeModal(); touch(); toast('已儲存');
   };
+  $('mOff').onclick = () => { closeModal(); setOff(l.id, !off); toast(off ? '已復原' : '已取消本節課'); };
   if ($('mDel')) $('mDel').onclick = () => { closeModal(); removeExtraLesson(l.id); toast('已刪除'); };
   openModal();
 }
@@ -947,8 +978,8 @@ function mergeData(a, b) {
   // 較新的 updated 勝出，逐筆合併
   const newer = (!a.updated || (b.updated && b.updated > a.updated)) ? b : a;
   const older = newer === b ? a : b;
-  const out = { v: 1, updated: newer.updated, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {} };
-  ['rec', 'task', 'over', 'extra', 'print', 'tomb'].forEach(k => {
+  const out = { v: 1, updated: newer.updated, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {}, off: {} };
+  ['rec', 'task', 'over', 'extra', 'print', 'tomb', 'off'].forEach(k => {
     out[k] = Object.assign({}, older[k] || {}, newer[k] || {});
   });
   // extra／print 的 id 不會重用，只要任一邊記過刪除的墓碑，就不讓它從另一邊復活
@@ -972,7 +1003,7 @@ function exportCsv() {
     const r = recOf(l) || {};
     const wk = PLAN.weeks && PLAN.weeks[l.date];
     rows.push([c.name, l.date, dowOf(l.date), l.period || '', wk ? wk[0] : '', wk ? wk[1] : '',
-      planOf(l).replace(/\n/g, ' / '), r.s ? STATES[r.s].label : '', r.a || '', r.n || '', l.src || '']);
+      planOf(l).replace(/\n/g, ' / '), isOff(l) ? '已取消' : r.s ? STATES[r.s].label : '', r.a || '', r.n || '', l.src || '']);
   }));
   const csv = '﻿' + rows.map(r => r.map(x => `"${String(x).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   download(`教學進度_${todayISO()}.csv`, csv, 'text/csv;charset=utf-8');
