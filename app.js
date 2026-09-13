@@ -354,6 +354,7 @@ function tagsFor(l) {
   else if (l.src === '測驗安排') out.push('<span class="tag test">測驗日</span>');
   else if (l.src === '待定') out.push('<span class="tag est">待定</span>');
   else if (l.src === '加開') out.push('<span class="tag">加開</span>');
+  else if (l.src === '借堂') out.push('<span class="tag lend">借堂</span>');
   if (isOff(l)) out.push('<span class="tag off">已取消</span>');
   if (DATA.over[l.id]) out.push('<span class="tag">原定已改</span>');
   tasksOfLesson(l).forEach(t => {
