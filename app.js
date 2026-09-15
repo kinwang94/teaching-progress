@@ -29,6 +29,10 @@ const STATES = {
   moved:  { label: '調課',   cls: 'off',   sym: '\u2192', w: 0, skip: true }   // 舊資料相容
 };
 const PICK = ['done', 'part', 'delay'];
+/* 「未完成／部分」可以另外標 m（已補回）：狀態照實保留，
+   但缺的進度已經排進後面的課節（借堂、併堂、刪減複習等），這一節改算一整節，不再算落後。 */
+const MAKEUP = ['delay', 'part'];
+const madeUp = r => !!(r && r.m && MAKEUP.includes(r.s));
 const CYCLE = ['', 'done', 'part', 'delay'];
 const DOW = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -295,7 +299,7 @@ function statsOf(list) {
     if (st && STATES[st] && STATES[st].skip) return;
     total++;
     if (l.date <= t) due++;
-    if (st && STATES[st]) done += STATES[st].w;
+    if (st && STATES[st]) done += madeUp(r) ? 1 : STATES[st].w;
     if (st === 'done' || st === 'part') lastDone = l;
     if (!st && !nextUp && l.date >= t) nextUp = l;
   });
@@ -356,6 +360,7 @@ function tagsFor(l) {
   else if (l.src === '加開') out.push('<span class="tag">加開</span>');
   else if (l.src === '借堂') out.push('<span class="tag lend">借堂</span>');
   if (isOff(l)) out.push('<span class="tag off">已取消</span>');
+  if (madeUp(recOf(l))) out.push('<span class="tag hw">已補回</span>');
   if (DATA.over[l.id]) out.push('<span class="tag">原定已改</span>');
   tasksOfLesson(l).forEach(t => {
     const cls = t.type === 'test' || t.type === 'quiz' ? 'test' : 'hw';
@@ -386,7 +391,7 @@ function lessonRow(l, opts) {
     </div>
     <div class="lact">
       ${off ? '<button class="st off" data-edit="' + l.id + '">已取消</button>'
-            : `<button class="st${st ? ' ' + st.cls : ''}" data-quick="${l.id}">${st ? st.label : '記錄'}</button>`}
+            : `<button class="st${st ? ' ' + st.cls : ''}${madeUp(r) ? ' made' : ''}" data-quick="${l.id}">${st ? st.label + (madeUp(r) ? '・已補回' : '') : '記錄'}</button>`}
       <button class="edit" data-edit="${l.id}">編輯</button>
     </div>
   </div>`;
@@ -468,7 +473,7 @@ function cellLesson(l) {
   const miss = !off && !st && l.date < todayISO();
   const short = c.name;
   const act = r.a || '';
-  return `<div class="lz st-${st}${miss ? ' lz-miss' : ''}${off ? ' lz-off' : ''}" style="--c:${colorOf(c)}">
+  return `<div class="lz st-${st}${miss ? ' lz-miss' : ''}${off ? ' lz-off' : ''}${madeUp(r) ? ' lz-made' : ''}" style="--c:${colorOf(c)}">
     <div class="lz-h">
       <span class="nm">${esc(short)}</span>
       ${l.period ? `<span class="pd">${esc(l.period)}</span>` : ''}
@@ -788,6 +793,9 @@ function openLesson(id) {
       ${PICK.map(k => `<button data-s="${k}" aria-pressed="${r.s === k}">${STATES[k].sym}　${STATES[k].label}</button>`).join('')}
       <button data-s="" aria-pressed="${!r.s}">清除</button>
     </div>
+    <label class="mrow" id="mRow"${MAKEUP.includes(r.s) ? '' : ' hidden'}>
+      <input type="checkbox" id="fM"${r.m ? ' checked' : ''}>
+      已補回——缺的進度已排進後面的課節，這一節不再算落後</label>
     <label class="f">實際教到哪裡</label>
     <textarea id="fA" placeholder="例如：只講到 1.2，例題 3 未做">${esc(r.a || '')}</textarea>
     <label class="f">備註（學生反應、要補的、下次注意）</label>
@@ -808,13 +816,15 @@ function openLesson(id) {
   $('stRow').onclick = e => {
     const b = e.target.closest('button[data-s]'); if (!b) return;
     pick = b.dataset.s;
+    $('mRow').hidden = !MAKEUP.includes(pick);
     $('stRow').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x.dataset.s === pick));
   };
   $('mCancel').onclick = closeModal;
   $('mSave').onclick = () => {
     const a = $('fA').value.trim(), n = $('fN').value.trim(), o = $('fO').value.trim();
     if (!pick && !a && !n) delete DATA.rec[l.id];
-    else DATA.rec[l.id] = { s: pick || undefined, a: a || undefined, n: n || undefined };
+    else DATA.rec[l.id] = { s: pick || undefined, a: a || undefined, n: n || undefined,
+      m: MAKEUP.includes(pick) && $('fM').checked ? 1 : undefined };
     if (o) DATA.over[l.id] = o; else delete DATA.over[l.id];
     closeModal(); touch(); toast('已儲存');
   };
@@ -1004,7 +1014,7 @@ function exportCsv() {
     const r = recOf(l) || {};
     const wk = PLAN.weeks && PLAN.weeks[l.date];
     rows.push([c.name, l.date, dowOf(l.date), l.period || '', wk ? wk[0] : '', wk ? wk[1] : '',
-      planOf(l).replace(/\n/g, ' / '), isOff(l) ? '已取消' : r.s ? STATES[r.s].label : '', r.a || '', r.n || '', l.src || '']);
+      planOf(l).replace(/\n/g, ' / '), isOff(l) ? '已取消' : r.s ? STATES[r.s].label + (madeUp(r) ? '（已補回）' : '') : '', r.a || '', r.n || '', l.src || '']);
   }));
   const csv = '﻿' + rows.map(r => r.map(x => `"${String(x).replace(/"/g, '""')}"`).join(',')).join('\r\n');
   download(`教學進度_${todayISO()}.csv`, csv, 'text/csv;charset=utf-8');
