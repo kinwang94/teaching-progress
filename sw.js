@@ -1,5 +1,5 @@
 'use strict';
-const VERSION = 'tp-v5';
+const VERSION = 'tp-v6';
 const SHELL = ['./', './index.html', './app.js', './manifest.json',
   './icon.svg', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 

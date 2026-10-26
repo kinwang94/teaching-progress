@@ -59,7 +59,7 @@ const TASK_RULES = [
 ];
 
 // ---------- 狀態 ----------
-let DATA = { v: 1, updated: null, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {}, off: {} };
+let DATA = { v: 1, updated: null, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {}, off: {}, schedule: {} };
 let view = localStorage.getItem(LS_VIEW) || 'today';
 if (view === 'week' || view === 'class') view = 'cal';
 let classFilter = localStorage.getItem(LS_CLASS) || 'all';
@@ -100,11 +100,16 @@ function planGistHelpHtml() {
     請它照這個 repo 裡的 <code>SETUP_PROMPT.md</code> 幫你整理並建立；
     或自己到 <a href="https://gist.github.com" target="_blank" rel="noopener">gist.github.com</a> 手動建一個 <b>secret</b> gist。`;
 }
-function toast(msg) {
+function toast(msg, undo) {
   const t = $('toast');
   t.textContent = msg; t.classList.add('show');
+  if (undo) {
+    const b = document.createElement('button');
+    b.textContent = '復原'; b.onclick = () => { t.classList.remove('show'); undo(); };
+    t.appendChild(b);
+  }
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.remove('show'), 2200);
+  toast._t = setTimeout(() => t.classList.remove('show'), undo ? 8000 : 2200);
 }
 
 // ---------- 資料 ----------
@@ -114,7 +119,7 @@ function loadLocal() {
     if (raw) {
       const d = JSON.parse(raw);
       DATA = Object.assign({ v: 1, updated: null, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {}, off: {} }, d);
-      DATA.rec = DATA.rec || {}; DATA.task = DATA.task || {}; DATA.over = DATA.over || {}; DATA.extra = DATA.extra || {}; DATA.print = DATA.print || {}; DATA.tomb = DATA.tomb || {}; DATA.off = DATA.off || {};
+      DATA.rec = DATA.rec || {}; DATA.task = DATA.task || {}; DATA.over = DATA.over || {}; DATA.extra = DATA.extra || {}; DATA.print = DATA.print || {}; DATA.tomb = DATA.tomb || {}; DATA.off = DATA.off || {}; DATA.schedule = DATA.schedule || {};
     }
   } catch (e) { console.warn('本機資料讀取失敗', e); }
 }
@@ -145,7 +150,8 @@ let COLOR = {}, PRINT_CLASSES = [], CLASS_SIZE = {}, GROUPS = [], PRINT_RATE = {
 
 function initPlan(p) {
   PLAN = p;
-  CLASSES = PLAN.classes || [];
+  // 顯示用副本；移動課節不能改寫原定課表，重新讀取／還原才有可靠基準。
+  CLASSES = (PLAN.classes || []).map(c => ({ ...c, lessons: (c.lessons || []).map(l => ({ ...l })) }));
   byId = {};
   CLASSES.forEach(c => { c.lessons.forEach((l, i) => { l.cid = c.id; l.idx = i; byId[l.id] = l; }); });
   COLOR = Object.assign({}, PLAN.colors || {});
@@ -155,6 +161,53 @@ function initPlan(p) {
   GROUPS = PLAN.groups || [];
   PRINT_RATE = PLAN.printRate || { bw: 0, color: 0 };
   loadExtras();
+  applySchedules();
+}
+
+function compareLessons(a, b) {
+  return a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || '')
+    || (a.period || 'zz').localeCompare(b.period || 'zz', 'zh-Hant', { numeric: true });
+}
+function applySchedules() {
+  Object.entries(DATA.schedule || {}).forEach(([id, s]) => {
+    const l = byId[id];
+    if (!l || s.reset) return;
+    const dest = CLASSES.find(c => c.id === s.cid);
+    if (!dest) return; // 設定已移除的班別先保留調整記錄，課節仍顯示在原班。
+    const source = CLASSES.find(c => c.id === l.cid);
+    if (source !== dest) {
+      source.lessons = source.lessons.filter(x => x.id !== id);
+      dest.lessons.push(l);
+    }
+    Object.assign(l, { cid: s.cid, date: s.date, period: s.period, time: s.time });
+  });
+  CLASSES.forEach(c => {
+    c.lessons.sort(compareLessons);
+    c.lessons.forEach((l, i) => { l.idx = i; });
+  });
+}
+function scheduleOf(l) {
+  return { cid: l.cid, date: l.date, period: l.period || '', time: l.time || '' };
+}
+function validSchedule(s) {
+  return CLASSES.some(c => c.id === s.cid) && /^\d{4}-\d{2}-\d{2}$/.test(s.date)
+    && !isNaN(dObj(s.date)) && isoOf(dObj(s.date)) === s.date;
+}
+function setSchedule(id, s) {
+  DATA.schedule[id] = { ...s, updated: new Date().toISOString() };
+  initPlan(PLAN);
+}
+function moveLesson(id, changes) {
+  const l = byId[id]; if (!l) return;
+  const before = scheduleOf(l), after = { ...before, ...changes };
+  if (!validSchedule(after) || JSON.stringify(before) === JSON.stringify(after)) return;
+  setSchedule(id, after);
+  selDay = after.date;
+  touch();
+  toast('已移到 ' + fmtMD(after.date) + ' ' + (after.period || '') + ' ' + (after.time || '')
+    + ' · ' + CLASSES.find(c => c.id === after.cid).name, () => {
+      setSchedule(id, before); selDay = before.date; touch(); toast('已復原移動');
+    });
 }
 function loadPlanCache() {
   try {
@@ -186,9 +239,9 @@ async function refreshPlan(silent) {
 function injectExtra(id, e) {
   if (byId[id]) return;
   const c = CLASSES.find(x => x.id === e.cid); if (!c) return;
-  const l = { id, date: e.date, period: e.period || '', plan: e.plan || '', src: '加開', cid: e.cid };
+  const l = { id, date: e.date, period: e.period || '', time: e.time || '', plan: e.plan || '', src: '加開', cid: e.cid };
   c.lessons.push(l);
-  c.lessons.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : (a.period || 'zz').localeCompare(b.period || 'zz'));
+  c.lessons.sort(compareLessons);
   byId[id] = l;
 }
 function loadExtras() {
@@ -197,9 +250,9 @@ function loadExtras() {
     injectExtra(id, DATA.extra[id]);
   });
 }
-function addExtraLesson(cid, date, period, plan) {
+function addExtraLesson(cid, date, period, plan, time = '') {
   const id = 'extra-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  DATA.extra[id] = { cid, date, period: period || '', plan };
+  DATA.extra[id] = { cid, date, period: period || '', time, plan };
   injectExtra(id, DATA.extra[id]);
   touch();
   return id;
@@ -212,6 +265,7 @@ function removeExtraLesson(id) {
   delete DATA.extra[id];
   delete DATA.rec[id];
   delete DATA.over[id];
+  delete DATA.schedule[id];
   if (DATA.off) delete DATA.off[id];
   markDeleted('extra', id);
   touch();
@@ -283,6 +337,10 @@ function classTabs() {
       const c = CLASSES.find(x => x.id === cid); if (!c) return;
       h += `<button class="ftab grpsub" data-class="${c.id}" style="--c:${colorOf(c)}" title="${esc(c.name)}" aria-pressed="${classFilter === c.id}">${esc(names[i])}</button>`;
     });
+  });
+  const grouped = new Set(GROUPS.flatMap(g => g.ids));
+  CLASSES.filter(c => !grouped.has(c.id)).forEach(c => {
+    h += `<button class="ftab grpsub" data-class="${esc(c.id)}" style="--c:${colorOf(c)}" title="${esc(c.name)}" aria-pressed="${classFilter === c.id}">${esc(c.name)}</button>`;
   });
   h += `</div>`;
   return h;
@@ -377,9 +435,9 @@ function lessonRow(l, opts) {
   const st = r && r.s && STATES[r.s] ? STATES[r.s] : null;
   const isToday = l.date === todayISO();
   const meta = (opts.showDate === false && l.period)
-    ? `<b>${esc(l.period)}</b>${esc(l.time || '')}`
-    : `<b>${fmtMD(l.date)}</b>${dowOf(l.date)}${l.period ? '<br>' + esc(l.period) : ''}`;
-  return `<div class="lesson${isToday ? ' today' : ''}${off ? ' off' : ''}" data-lid="${l.id}">
+    ? `<b>${esc(l.period)}</b>${l.time ? '<br>' + esc(l.time) : ''}`
+    : `<b>${fmtMD(l.date)}</b>${dowOf(l.date)}${l.period ? '<br>' + esc(l.period) : ''}${l.time ? '<br>' + esc(l.time) : ''}`;
+  return `<div class="lesson${isToday ? ' today' : ''}${off ? ' off' : ''}" data-lid="${esc(l.id)}" data-drag-id="${esc(l.id)}" draggable="true">
     <span class="lmark" style="background:${colorOf(c)}"></span>
     <div class="lmeta">${meta}</div>
     <div class="lbody">
@@ -390,6 +448,7 @@ function lessonRow(l, opts) {
       ${tagsFor(l)}
     </div>
     <div class="lact">
+      <button class="drag-handle" data-edit="${esc(l.id)}" title="拖動調課；按一下編輯" aria-label="編輯或拖動課節">⠿</button>
       ${off ? '<button class="st off" data-edit="' + l.id + '">已取消</button>'
             : `<button class="st${st ? ' ' + st.cls : ''}${madeUp(r) ? ' made' : ''}" data-quick="${l.id}">${st ? st.label + (madeUp(r) ? '・已補回' : '') : '記錄'}</button>`}
       <button class="edit" data-edit="${l.id}">編輯</button>
@@ -402,7 +461,7 @@ function vToday() {
   const t = todayISO();
   const rows = [];
   CLASSES.forEach(c => c.lessons.filter(l => l.date === t).forEach(l => rows.push(l)));
-  rows.sort((a, b) => (a.period || '').localeCompare(b.period || ''));
+  rows.sort(compareLessons);
 
   const soon = [];
   CLASSES.forEach(c => {
@@ -454,7 +513,7 @@ function lessonsOn(dt) {
   activeClasses().forEach(c => {
     c.lessons.filter(l => l.date === dt).forEach(l => out.push(l));
   });
-  out.sort((a, b) => (a.period || 'zz').localeCompare(b.period || 'zz'));
+  out.sort(compareLessons);
   return out;
 }
 
@@ -473,12 +532,14 @@ function cellLesson(l) {
   const miss = !off && !st && l.date < todayISO();
   const short = c.name;
   const act = r.a || '';
-  return `<div class="lz st-${st}${miss ? ' lz-miss' : ''}${off ? ' lz-off' : ''}${madeUp(r) ? ' lz-made' : ''}" style="--c:${colorOf(c)}">
+  return `<div class="lz st-${st}${miss ? ' lz-miss' : ''}${off ? ' lz-off' : ''}${madeUp(r) ? ' lz-made' : ''}" style="--c:${colorOf(c)}" data-drag-id="${esc(l.id)}" draggable="true">
     <div class="lz-h">
+      <button class="drag-handle" data-edit="${esc(l.id)}" title="拖動調課；按一下編輯班級、科目及時間" aria-label="編輯或拖動課節">⠿</button>
       <span class="nm">${esc(short)}</span>
       ${l.period ? `<span class="pd">${esc(l.period)}</span>` : ''}
       ${off ? '<span class="stg offtag">已取消</span>' : stateBtns(l)}
     </div>
+    <button class="lz-time" data-edit="${esc(l.id)}" title="修改日期、班級／科目、節次及時間">${esc(l.time || '設定時間')}<span>編輯</span></button>
     <div class="lz-p" data-inl="p" data-lid="${l.id}" title="雙擊修改原定內容">${esc(planOf(l)) || '（未定）'}</div>
     <div class="lz-a${act ? '' : ' ph'}" data-inl="a" data-lid="${l.id}" title="雙擊輸入實際進度">${act ? esc(act) : '＋'}</div>
     ${r.n ? `<div class="lz-a" data-inl="n" data-lid="${l.id}" style="color:#8A6A1E">${esc(r.n)}</div>` : ''}
@@ -509,7 +570,7 @@ function vCal() {
     const ls = lessonsOn(dt);
     const ev = PLAN.calendar[dt];
     const wk = PLAN.weeks && PLAN.weeks[dt];
-    h += `<div class="day${out ? ' out' : ''}${dt === t ? ' today' : ''}${dt === selDay ? ' sel' : ''}">
+    h += `<div class="day${out ? ' out' : ''}${dt === t ? ' today' : ''}${dt === selDay ? ' sel' : ''}" data-drop-day="${dt}">
       <div class="dnum" data-day="${dt}"><b>${x.getDate()}</b>${dt === t ? '今日' : ''}${wk ? `<span class="wk">第 ${wk[1]} 週</span>` : ''}</div>
       ${ev ? `<div class="ev" title="${esc(ev.join('、'))}">${esc(ev.join('、'))}</div>` : ''}
       ${ls.map(cellLesson).join('')}
@@ -525,7 +586,7 @@ function vCal() {
     <span class="sep"></span>
     ${CLASSES.map(c => `<span><i style="background:${colorOf(c)}"></i>${esc(c.name)}</span>`).join('')}
   </div>
-  <p class="hintx">雙擊上半格改原定內容，雙擊下半格記實際進度（Enter 儲存、Esc 取消）。右上角 ✓／–／↷ 按一下直接設定，再按一下清除。
+  <p class="hintx">拖動卡片到另一日期改日期；放到另一張卡上採用該卡的節次和時間（兩節都會保留）；放到班級／科目分頁改歸屬。手機可拖動卡片右上角的把手。移動後可按「復原」。按卡片時間或「編輯」可修改日期、班級／科目、節次及時間。<br>雙擊上半格改原定內容，雙擊下半格記實際進度（Enter 儲存、Esc 取消）。右上角 ✓／–／↷ 按一下直接設定，再按一下清除。
   按日期數字展開該日全部課節，在那裡按「編輯」可以取消整節課（放假、活動、排錯），取消的課節不算進度。</p>`;
 
   const day = selDay;
@@ -551,6 +612,7 @@ function vWeekList() {
   </div>`;
   h += classTabs();
   days.forEach(dt => {
+    h += `<section class="week-day" data-drop-day="${dt}">`;
     const rows = lessonsOn(dt);
     const ev = PLAN.calendar[dt];
     h += `<h2 class="sec">${fmtMD(dt)}　星期${dowOf(dt)}${ev ? `　<span class="tag">${esc(ev.join('、'))}</span>` : ''}${dt === todayISO() ? '　<span class="pill on">今日</span>' : ''}
@@ -558,6 +620,7 @@ function vWeekList() {
     h += rows.length
       ? `<div class="card">${rows.map(l => lessonRow(l, { showClass: true, showDate: false })).join('')}</div>`
       : `<div class="empty">沒有排課</div>`;
+    h += '</section>';
   });
   return h;
 }
@@ -788,6 +851,15 @@ function openLesson(id) {
     <h3>${esc(c.name)}　${fmtMD(l.date)}（${dowOf(l.date)}）${l.period ? '　' + esc(l.period) : ''}</h3>
     <div class="ref">原定：${esc(l.plan) || '（未定）'}${l.src ? `\n來源：${esc(l.src)}` : ''}</div>
     ${off ? '<p class="hintx" style="color:var(--bad);margin:0">這一節已取消，不計入應上節數與完成度。</p>' : ''}
+    <label class="f" for="fCid">班級／科目</label>
+    <select id="fCid">${CLASSES.map(x => `<option value="${esc(x.id)}"${x.id === l.cid ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
+    <div class="schedule-fields">
+      <div><label class="f" for="fDate">日期</label><input type="date" id="fDate" value="${esc(l.date)}" required></div>
+      <div><label class="f" for="fPeriod">節次</label><input type="text" id="fPeriod" value="${esc(l.period || '')}" placeholder="例如：第 1 節"></div>
+    </div>
+    <label class="f" for="fTime">時間（可留空）</label>
+    <input type="text" id="fTime" value="${esc(l.time || '')}" placeholder="例如：08:40–09:20">
+    ${DATA.schedule[id] && !DATA.schedule[id].reset ? '<button class="edit restore-schedule" id="mRestore">還原原定日期、班級／科目及時間</button>' : ''}
     <label class="f">狀態</label>
     <div class="states" id="stRow">
       ${PICK.map(k => `<button data-s="${k}" aria-pressed="${r.s === k}">${STATES[k].sym}　${STATES[k].label}</button>`).join('')}
@@ -813,6 +885,10 @@ function openLesson(id) {
     <p class="hintx" style="margin-top:6px">「取消本節課」用在放假、學校活動、課表排錯——這一格不算課，隨時可以復原。
     ${l.src === '加開' ? '「刪除本節」把加錯的課節整筆移除，不能復原。' : '原定課節表裡的課只能取消，不會從課表刪掉。'}</p>`;
   let pick = r.s || '';
+  let restoringSchedule = false;
+  ['fCid', 'fDate', 'fPeriod', 'fTime'].forEach(key => {
+    $(key).addEventListener('input', () => { restoringSchedule = false; });
+  });
   $('stRow').onclick = e => {
     const b = e.target.closest('button[data-s]'); if (!b) return;
     pick = b.dataset.s;
@@ -820,12 +896,25 @@ function openLesson(id) {
     $('stRow').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x.dataset.s === pick));
   };
   $('mCancel').onclick = closeModal;
+  if ($('mRestore')) $('mRestore').onclick = () => {
+    const baseClass = PLAN.classes.find(x => x.lessons.some(x => x.id === id));
+    const base = baseClass ? { ...baseClass.lessons.find(x => x.id === id), cid: baseClass.id } : DATA.extra[id];
+    if (!base) return;
+    $('fCid').value = base.cid; $('fDate').value = base.date;
+    $('fPeriod').value = base.period || ''; $('fTime').value = base.time || '';
+    restoringSchedule = true;
+  };
   $('mSave').onclick = () => {
+    const schedule = { cid: $('fCid').value, date: $('fDate').value, period: $('fPeriod').value.trim(), time: $('fTime').value.trim() };
+    if (!validSchedule(schedule)) { toast('請選擇有效日期及班級／科目'); $('fDate').focus(); return; }
     const a = $('fA').value.trim(), n = $('fN').value.trim(), o = $('fO').value.trim();
     if (!pick && !a && !n) delete DATA.rec[l.id];
     else DATA.rec[l.id] = { s: pick || undefined, a: a || undefined, n: n || undefined,
       m: MAKEUP.includes(pick) && $('fM').checked ? 1 : undefined };
     if (o) DATA.over[l.id] = o; else delete DATA.over[l.id];
+    if (restoringSchedule) setSchedule(id, { reset: true });
+    else if (JSON.stringify(schedule) !== JSON.stringify(scheduleOf(l))) setSchedule(id, schedule);
+    selDay = schedule.date;
     closeModal(); touch(); toast('已儲存');
   };
   $('mOff').onclick = () => { closeModal(); setOff(l.id, !off); toast(off ? '已復原' : '已取消本節課'); };
@@ -840,6 +929,8 @@ function openAddLesson(date) {
     <select id="naCid">${CLASSES.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
     <label class="f">節次（例如：第3節，可留空）</label>
     <input type="text" id="naPeriod" placeholder="例如：第3節">
+    <label class="f" for="naTime">時間（可留空）</label>
+    <input type="text" id="naTime" placeholder="例如：08:40–09:20">
     <label class="f">內容</label>
     <textarea id="naPlan" placeholder="這節課要教什麼"></textarea>
     <div class="mfoot">
@@ -851,7 +942,7 @@ function openAddLesson(date) {
     const cid = $('naCid').value, period = $('naPeriod').value.trim(), plan = $('naPlan').value.trim();
     if (!plan) { toast('請輸入內容'); return; }
     selDay = date;
-    addExtraLesson(cid, date, period, plan);
+    addExtraLesson(cid, date, period, plan, $('naTime').value.trim());
     closeModal(); toast('已加入');
   };
   openModal();
@@ -917,7 +1008,10 @@ function openSettings() {
   openModal();
 }
 
-function openModal() { $('mask').classList.add('open'); }
+function openModal() {
+  clearTimeout(toast._t); $('toast').classList.remove('show');
+  $('mask').classList.add('open'); $('modal').scrollTop = 0;
+}
 function closeModal() { $('mask').classList.remove('open'); $('modal').innerHTML = ''; }
 $('mask').addEventListener('click', e => { if (e.target === $('mask')) closeModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
@@ -972,7 +1066,7 @@ async function syncNow(pull) {
         const remote = JSON.parse(txt);
         DATA = mergeData(DATA, remote);
         saveLocal();
-        loadExtras();
+        if (PLAN) initPlan(PLAN);
       }
     }
     await gh('/gists/' + gid, {
@@ -989,9 +1083,15 @@ function mergeData(a, b) {
   // 較新的 updated 勝出，逐筆合併
   const newer = (!a.updated || (b.updated && b.updated > a.updated)) ? b : a;
   const older = newer === b ? a : b;
-  const out = { v: 1, updated: newer.updated, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {}, off: {} };
+  const out = { v: 1, updated: newer.updated, rec: {}, task: {}, over: {}, extra: {}, print: {}, tomb: {}, off: {}, schedule: {} };
   ['rec', 'task', 'over', 'extra', 'print', 'tomb', 'off'].forEach(k => {
     out[k] = Object.assign({}, older[k] || {}, newer[k] || {});
+  });
+  // 調課逐節比較修改時間，另一裝置新增備註不會令較舊的調課蓋過新設定。
+  const scheduleIds = new Set([...Object.keys(a.schedule || {}), ...Object.keys(b.schedule || {})]);
+  scheduleIds.forEach(id => {
+    const x = (a.schedule || {})[id], y = (b.schedule || {})[id];
+    out.schedule[id] = !x ? y : !y ? x : (y.updated || '') > (x.updated || '') ? y : x;
   });
   // extra／print 的 id 不會重用，只要任一邊記過刪除的墓碑，就不讓它從另一邊復活
   Object.keys(out.tomb).forEach(tk => {
@@ -1009,11 +1109,11 @@ function download(name, text, type) {
   setTimeout(() => URL.revokeObjectURL(u), 1000);
 }
 function exportCsv() {
-  const rows = [['班別', '日期', '星期', '節次', '學期', '週次', '原定內容', '狀態', '實際內容', '備註', '來源']];
+  const rows = [['班別', '日期', '星期', '節次', '時間', '學期', '週次', '原定內容', '狀態', '實際內容', '備註', '來源']];
   CLASSES.forEach(c => c.lessons.forEach(l => {
     const r = recOf(l) || {};
     const wk = PLAN.weeks && PLAN.weeks[l.date];
-    rows.push([c.name, l.date, dowOf(l.date), l.period || '', wk ? wk[0] : '', wk ? wk[1] : '',
+    rows.push([c.name, l.date, dowOf(l.date), l.period || '', l.time || '', wk ? wk[0] : '', wk ? wk[1] : '',
       planOf(l).replace(/\n/g, ' / '), isOff(l) ? '已取消' : r.s ? STATES[r.s].label + (madeUp(r) ? '（已補回）' : '') : '', r.a || '', r.n || '', l.src || '']);
   }));
   const csv = '﻿' + rows.map(r => r.map(x => `"${String(x).replace(/"/g, '""')}"`).join(',')).join('\r\n');
@@ -1031,6 +1131,108 @@ function exportPrintCsv() {
   download(`代印記錄_${todayISO()}.csv`, csv, 'text/csv;charset=utf-8');
 }
 
+// ---------- 拖動調課（原生滑鼠拖曳；觸控由把手開始，保留月曆滑動及原位編輯） ----------
+let dragId = null, dropTarget = null, touchDrag = null, suppressClickUntil = 0;
+function targetForDrop(el) {
+  if (!el || !dragId) return null;
+  const tab = el.closest('[data-class]');
+  if (tab) return CLASSES.some(c => c.id === tab.dataset.class) ? tab : null;
+  const card = el.closest('[data-drag-id]');
+  if (card && card.dataset.dragId !== dragId) return card;
+  return el.closest('[data-drop-day]');
+}
+function highlightDrop(el) {
+  const next = targetForDrop(el);
+  if (dropTarget === next) return;
+  if (dropTarget) dropTarget.classList.remove('drop-target');
+  dropTarget = next;
+  if (dropTarget) dropTarget.classList.add('drop-target');
+}
+function finishDrop(target) {
+  if (!dragId || !target) return;
+  if (target.dataset.class) moveLesson(dragId, { cid: target.dataset.class });
+  else if (target.dataset.dragId) {
+    const dest = byId[target.dataset.dragId];
+    if (dest) moveLesson(dragId, { date: dest.date, period: dest.period || '', time: dest.time || '' });
+  } else if (target.dataset.dropDay) moveLesson(dragId, { date: target.dataset.dropDay });
+}
+function clearDrag() {
+  document.querySelectorAll('.dragging,.drop-target').forEach(el => el.classList.remove('dragging', 'drop-target'));
+  if (touchDrag) {
+    cancelAnimationFrame(touchDrag.frame);
+    if (touchDrag.ghost) touchDrag.ghost.remove();
+  }
+  dragId = null; dropTarget = null; touchDrag = null;
+}
+$('view').addEventListener('dragstart', e => {
+  const card = e.target.closest('[data-drag-id]');
+  if (!card || inlineOpen || (e.target.closest('button,input,textarea,select') && !e.target.closest('.drag-handle'))) {
+    e.preventDefault(); return;
+  }
+  dragId = card.dataset.dragId;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', dragId);
+  card.classList.add('dragging');
+});
+$('view').addEventListener('dragover', e => {
+  if (!dragId) return;
+  highlightDrop(e.target);
+  if (dropTarget) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+});
+$('view').addEventListener('drop', e => {
+  if (!dragId) return;
+  e.preventDefault();
+  const target = targetForDrop(e.target);
+  finishDrop(target); clearDrag(); suppressClickUntil = Date.now() + 350;
+});
+document.addEventListener('dragend', clearDrag);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && dragId) { clearDrag(); suppressClickUntil = Date.now() + 350; }
+});
+$('view').addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' || !e.isPrimary || !e.target.closest('.drag-handle') || inlineOpen) return;
+  const card = e.target.closest('[data-drag-id]'); if (!card) return;
+  touchDrag = { id: card.dataset.dragId, pointer: e.pointerId, card, x: e.clientX, y: e.clientY,
+    startX: e.clientX, startY: e.clientY, active: false };
+  e.target.setPointerCapture(e.pointerId);
+});
+function touchDragFrame() {
+  const d = touchDrag; if (!d || !d.active) return;
+  d.ghost.style.left = (d.x + 12) + 'px'; d.ghost.style.top = (d.y + 12) + 'px';
+  const under = document.elementFromPoint(d.x, d.y);
+  highlightDrop(under);
+  const wrap = under && under.closest('.calwrap,.foldertabs');
+  if (wrap) {
+    const box = wrap.getBoundingClientRect();
+    if (d.x < box.left + 36) wrap.scrollLeft -= 10;
+    else if (d.x > Math.min(box.right, innerWidth) - 36) wrap.scrollLeft += 10;
+  }
+  if (d.y < 65) window.scrollBy(0, -10);
+  else if (d.y > innerHeight - 65) window.scrollBy(0, 10);
+  d.frame = requestAnimationFrame(touchDragFrame);
+}
+document.addEventListener('pointermove', e => {
+  const d = touchDrag; if (!d || e.pointerId !== d.pointer) return;
+  d.x = e.clientX; d.y = e.clientY;
+  if (!d.active && Math.hypot(d.x - d.startX, d.y - d.startY) > 8) {
+    d.active = true; dragId = d.id; d.card.classList.add('dragging');
+    d.ghost = document.createElement('div'); d.ghost.className = 'drag-preview';
+    const l = byId[d.id];
+    d.ghost.textContent = CLASSES.find(c => c.id === l.cid).name + ' · ' + (l.period || '課節');
+    document.body.appendChild(d.ghost); touchDragFrame();
+  }
+  if (d.active) e.preventDefault();
+}, { passive: false });
+document.addEventListener('pointerup', e => {
+  if (!touchDrag || e.pointerId !== touchDrag.pointer) return;
+  if (touchDrag.active) {
+    finishDrop(targetForDrop(document.elementFromPoint(e.clientX, e.clientY)));
+    suppressClickUntil = Date.now() + 500;
+  }
+  clearDrag();
+});
+document.addEventListener('pointercancel', () => { if (touchDrag) clearDrag(); });
+
 // ---------- 事件 ----------
 $('nav').addEventListener('click', e => {
   const b = e.target.closest('button[data-v]'); if (!b) return;
@@ -1040,6 +1242,7 @@ $('btnSet').onclick = openSettings;
 $('btnSync').onclick = () => syncNow(true);
 
 $('view').addEventListener('click', e => {
+  if (Date.now() < suppressClickUntil) { e.preventDefault(); return; }
   const q = e.target.closest('[data-quick]');
   if (q) {
     const id = q.dataset.quick, r = DATA.rec[id] || {};
@@ -1093,7 +1296,7 @@ $('view').addEventListener('click', e => {
       const f = inp.files[0]; if (!f) return;
       const fr = new FileReader();
       fr.onload = () => {
-        try { DATA = mergeData(DATA, JSON.parse(fr.result)); saveLocal(); loadExtras(); render(); toast('已匯入'); }
+        try { DATA = mergeData(DATA, JSON.parse(fr.result)); saveLocal(); if (PLAN) initPlan(PLAN); render(); toast('已匯入'); }
         catch (err) { toast('檔案讀不到：' + err.message); }
       };
       fr.readAsText(f);

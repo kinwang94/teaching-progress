@@ -182,6 +182,26 @@ table.cmp td.n{text-align:right;font-variant-numeric:tabular-nums}
 .lz-h{display:flex;align-items:center;gap:5px;padding:2px 4px 2px 6px;background:#E2E7E5;font-size:10.5px;color:var(--faint)}
 .lz-h .nm{font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lz-h .pd{white-space:nowrap}
+.drag-handle{flex:none;border:0;background:transparent;color:var(--soft);padding:2px 4px;min-width:24px;min-height:26px;cursor:grab;touch-action:none;font-size:18px;line-height:1}
+.drag-handle:active{cursor:grabbing}
+.lz-h{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 4px}
+.lz-h .nm{grid-column:1;grid-row:1;min-width:0;white-space:normal;overflow-wrap:anywhere}
+.lz-h .drag-handle{grid-column:2;grid-row:1;justify-self:end}
+.lz-h .pd{grid-column:1;grid-row:2}
+.lz-h .stg{grid-column:2;grid-row:2;margin-left:0}
+.lz-time{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;border:0;border-top:1px solid var(--line);padding:5px 6px;background:#F6F8F7;color:var(--soft);font-size:11px;font-variant-numeric:tabular-nums;cursor:pointer}
+.lz-time span{color:var(--ink)}
+.lz-time:hover{background:#E2E7E5}
+.dragging{opacity:.35}
+.drop-target{outline:2px solid var(--ink);outline-offset:-2px}
+.cal .day.drop-target,.week-day.drop-target{background:#EDF5F1}
+.drag-preview{position:fixed;z-index:100;pointer-events:none;max-width:220px;padding:8px 12px;background:var(--ink);color:#fff;border-radius:6px;font-size:13px}
+.drag-handle:focus-visible,.lz-time:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+.schedule-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.schedule-fields>div{min-width:0}
+.restore-schedule{margin-top:8px}
+#toast button{margin-left:12px;border:1px solid currentColor;border-radius:4px;padding:4px 10px;background:transparent;color:inherit;cursor:pointer}
+@media(pointer:coarse){.drag-handle{min-width:44px;min-height:44px}.lz-time{min-height:44px;align-items:center}}
 .lz.lz-miss .lz-h{background:#FBEBD3}
 .stg{margin-left:auto;display:flex;gap:2px}
 .sb{width:19px;height:17px;border:1px solid var(--rule);background:#fff;cursor:pointer;
@@ -222,7 +242,7 @@ textarea.inl{width:100%;border:1px solid var(--ink);border-radius:4px;font-size:
 .modal h3{margin:0 0 4px;font-size:16px}
 .modal .ref{color:var(--soft);font-size:13px;white-space:pre-wrap;background:#FAFBFB;border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:8px 0 14px}
 label.f{display:block;margin:12px 0 5px;font-size:13px;color:var(--soft)}
-.modal textarea,.modal input[type=text],.modal input[type=password],.modal select{
+.modal textarea,.modal input[type=text],.modal input[type=password],.modal input[type=date],.modal select{
   width:100%;padding:9px 11px;border:1px solid var(--rule);border-radius:8px;background:#fff
 }
 .modal textarea{min-height:70px;resize:vertical}
@@ -237,7 +257,7 @@ label.f{display:block;margin:12px 0 5px;font-size:13px;color:var(--soft)}
 .btn.danger{background:#fff;color:var(--bad);border-color:#E8C9C6}
 .hintx{font-size:12.5px;color:var(--faint);margin-top:10px}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:26px;background:var(--ink);color:#fff;padding:9px 16px;border-radius:20px;font-size:13.5px;z-index:90;opacity:0;pointer-events:none;transition:opacity .2s}
-.toast.show{opacity:1}
+.toast.show{opacity:1;pointer-events:auto;max-width:calc(100vw - 24px);width:max-content}
 ol.steps{padding-left:20px} ol.steps li{margin:7px 0}
 code{background:#F1F3F3;padding:1px 5px;border-radius:4px;font-size:13px}
 </style>
