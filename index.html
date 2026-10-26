@@ -188,8 +188,9 @@ table.cmp td.n{text-align:right;font-variant-numeric:tabular-nums}
 .drag-handle{flex:none;border:0;background:transparent;color:var(--soft);padding:2px 4px;min-width:24px;min-height:26px;cursor:grab;touch-action:none;font-size:18px;line-height:1}
 .drag-handle:active{cursor:grabbing}
 .lz-h .stg{flex:none;margin-left:0}
-.lz-time{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;border:0;border-top:1px solid var(--line);padding:5px 6px;background:#F6F8F7;color:var(--soft);font-size:11px;font-variant-numeric:tabular-nums;cursor:pointer}
-.lz-time span{color:var(--ink)}
+.lz-content{display:flex;align-items:flex-start;gap:4px}
+.lz-content .lz-p{flex:1;min-width:0}
+.lz-time{flex:none;margin:3px 6px 3px 0;width:auto;border:1px solid var(--rule);border-radius:4px;padding:1px 6px;background:transparent;color:var(--ink);font-size:11px;cursor:pointer}
 .lz-time:hover{background:#E2E7E5}
 .dragging{opacity:.35}
 .drop-target{outline:2px solid var(--ink);outline-offset:-2px}
@@ -200,7 +201,7 @@ table.cmp td.n{text-align:right;font-variant-numeric:tabular-nums}
 .schedule-fields>div{min-width:0}
 .restore-schedule{margin-top:8px}
 #toast button{margin-left:12px;border:1px solid currentColor;border-radius:4px;padding:4px 10px;background:transparent;color:inherit;cursor:pointer}
-@media(pointer:coarse){.cal{--lesson-col:280px}.drag-handle{min-width:44px;min-height:44px}.lz-time{min-height:44px;align-items:center}}
+@media(pointer:coarse){.cal{--lesson-col:280px}.drag-handle{min-width:44px;min-height:44px}.lz-time{min-height:36px}}
 .lz.lz-miss .lz-h{background:#FBEBD3}
 .stg{margin-left:auto;display:flex;gap:2px}
 .sb{width:19px;height:17px;border:1px solid var(--rule);background:#fff;cursor:pointer;

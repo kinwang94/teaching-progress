@@ -539,8 +539,7 @@ function cellLesson(l) {
       ${off ? '<span class="stg offtag">已取消</span>' : stateBtns(l)}
       <button class="drag-handle" data-edit="${esc(l.id)}" title="拖動調課；按一下編輯班級、科目及時間" aria-label="編輯或拖動課節">⠿</button>
     </div>
-    <button class="lz-time" data-edit="${esc(l.id)}" title="修改日期、班級／科目、節次及時間">${esc(l.time || '設定時間')}<span>編輯</span></button>
-    <div class="lz-p" data-inl="p" data-lid="${l.id}" title="雙擊修改原定內容">${esc(planOf(l)) || '（未定）'}</div>
+    <div class="lz-content"><div class="lz-p" data-inl="p" data-lid="${l.id}" title="雙擊修改原定內容">${esc(planOf(l)) || '（未定）'}</div><button class="lz-time" data-edit="${esc(l.id)}" title="修改日期、班級／科目、節次及時間">編輯</button></div>
     <div class="lz-a${act ? '' : ' ph'}" data-inl="a" data-lid="${l.id}" title="雙擊輸入實際進度">${act ? esc(act) : '＋'}</div>
     ${r.n ? `<div class="lz-a" data-inl="n" data-lid="${l.id}" style="color:#8A6A1E">${esc(r.n)}</div>` : ''}
   </div>`;
@@ -575,7 +574,7 @@ function vCal() {
       <div class="dnum" data-day="${dt}"><b>${x.getDate()}</b>${dt === t ? '今日' : ''}${wk ? `<span class="wk">第 ${wk[1]} 週</span>` : ''}</div>
       ${ev ? `<div class="ev" title="${esc(ev.join('、'))}">${esc(ev.join('、'))}</div>` : ''}
       ${ls.map(cellLesson).join('')}
-      <button class="addlz" data-addday="${dt}" title="加開課節">＋加課</button>
+      <button class="addlz" data-addday="${dt}" title="加開課節" aria-label="加開課節">+</button>
     </div>`;
   });
   h += `</div></div>`;
@@ -587,7 +586,7 @@ function vCal() {
     <span class="sep"></span>
     ${CLASSES.map(c => `<span><i style="background:${colorOf(c)}"></i>${esc(c.name)}</span>`).join('')}
   </div>
-  <p class="hintx">拖動卡片到另一日期改日期；放到另一張卡上採用該卡的節次和時間（兩節都會保留）；放到班級／科目分頁改歸屬。手機可拖動卡片右上角的把手。移動後可按「復原」。按卡片時間或「編輯」可修改日期、班級／科目、節次及時間。<br>雙擊上半格改原定內容，雙擊下半格記實際進度（Enter 儲存、Esc 取消）。右上角 ✓／–／↷ 按一下直接設定，再按一下清除。
+  <p class="hintx">拖動卡片到另一日期改日期；放到另一張卡上採用該卡的節次和時間（兩節都會保留）；放到班級／科目分頁改歸屬。手機可拖動卡片右上角的把手。移動後可按「復原」。按「編輯」可修改日期、班級／科目、節次及時間。<br>雙擊上半格改原定內容，雙擊下半格記實際進度（Enter 儲存、Esc 取消）。右上角 ✓／–／↷ 按一下直接設定，再按一下清除。
   按日期數字展開該日全部課節，在那裡按「編輯」可以取消整節課（放假、活動、排錯），取消的課節不算進度。</p>`;
 
   const day = selDay;
