@@ -534,10 +534,10 @@ function cellLesson(l) {
   const act = r.a || '';
   return `<div class="lz st-${st}${miss ? ' lz-miss' : ''}${off ? ' lz-off' : ''}${madeUp(r) ? ' lz-made' : ''}" style="--c:${colorOf(c)}" data-drag-id="${esc(l.id)}" draggable="true">
     <div class="lz-h">
-      <button class="drag-handle" data-edit="${esc(l.id)}" title="拖動調課；按一下編輯班級、科目及時間" aria-label="編輯或拖動課節">⠿</button>
-      <span class="nm">${esc(short)}</span>
+      <span class="nm" title="${esc(short)}">${esc(short)}</span>
       ${l.period ? `<span class="pd">${esc(l.period)}</span>` : ''}
       ${off ? '<span class="stg offtag">已取消</span>' : stateBtns(l)}
+      <button class="drag-handle" data-edit="${esc(l.id)}" title="拖動調課；按一下編輯班級、科目及時間" aria-label="編輯或拖動課節">⠿</button>
     </div>
     <button class="lz-time" data-edit="${esc(l.id)}" title="修改日期、班級／科目、節次及時間">${esc(l.time || '設定時間')}<span>編輯</span></button>
     <div class="lz-p" data-inl="p" data-lid="${l.id}" title="雙擊修改原定內容">${esc(planOf(l)) || '（未定）'}</div>
@@ -563,7 +563,8 @@ function vCal() {
   </div>`;
   h += classTabs();
 
-  h += `<div class="calwrap"><div class="cal">${['一', '二', '三', '四', '五', '六', '日'].map(d => `<div class="dowh">${d}</div>`).join('')}`;
+  const hasWeekend = dow => cells.some(x => x.getDay() === dow && lessonsOn(isoOf(x)).length);
+  h += `<div class="calwrap"><div class="cal${hasWeekend(6) ? ' has-sat' : ''}${hasWeekend(0) ? ' has-sun' : ''}">${['一', '二', '三', '四', '五', '六', '日'].map(d => `<div class="dowh">${d}</div>`).join('')}`;
   cells.forEach(x => {
     const dt = isoOf(x);
     const out = x.getMonth() !== base.getMonth();
@@ -814,6 +815,7 @@ function vOverview() {
 
 // ---------- 主繪製 ----------
 function render() {
+  document.body.classList.toggle('calendar-view', view === 'cal');
   document.querySelectorAll('#nav button').forEach(b => b.setAttribute('aria-selected', b.dataset.v === view));
   if (inlineOpen) { updateSyncUI(); return; }
   const m = $('view');
